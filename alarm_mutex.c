@@ -23,9 +23,10 @@
  */
 typedef struct alarm_tag {
     struct alarm_tag    *link;
+    int                 id;
     int                 seconds;
     time_t              time;   /* seconds from EPOCH */
-    char                message[64];
+    char                message[128];
 } alarm_t;
 
 pthread_mutex_t alarm_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -89,13 +90,12 @@ void *alarm_thread (void *arg)
             sleep (sleep_time);
         else
             sched_yield ();
-
         /*
          * If a timer expired, print the message and free the
          * structure.
          */
         if (alarm != NULL) {
-            printf ("(%d) %s\n", alarm->seconds, alarm->message);
+            printf ("Alarm(%d) Inserted by Main Thread Into %d Alarm list at %d: [\"%s\"]", alarm->id, pthread_self(),alarm->time,alarm->message);
             free (alarm);
         }
     }
@@ -122,19 +122,19 @@ int main (int argc, char *argv[])
 
         /*
          * Parse input line into seconds (%d) and a message
-         * (%64[^\n]), consisting of up to 64 characters
+         * (%128[^\n]), consisting of up to 128 characters
          * separated from the seconds by whitespace.
          */
-        if (sscanf (line, "%d %64[^\n]", 
-            &alarm->seconds, alarm->message) < 2) {
+        if (sscanf (line, "Start_Alarm(%d) %d %128[^\n]", 
+            &alarm->id, &alarm->seconds, alarm->message) < 3) {
             fprintf (stderr, "Bad command\n");
             free (alarm);
         } else {
+            alarm->time = time (NULL) + alarm->seconds;
+            printf ("Alarm(%d) Inserted by Main Thread Into %d Alarm list at %d: [\"%s\"]\n", alarm->id, pthread_self(),alarm->time,alarm->message);
             status = pthread_mutex_lock (&alarm_mutex);
             if (status != 0)
                 err_abort (status, "Lock mutex");
-            alarm->time = time (NULL) + alarm->seconds;
-
             /*
              * Insert the new alarm into the list of alarms,
              * sorted by expiration time.
@@ -142,7 +142,7 @@ int main (int argc, char *argv[])
             last = &alarm_list;
             next = *last;
             while (next != NULL) {
-                if (next->time >= alarm->time) {
+                if (next->id >= alarm->id) {
                     alarm->link = next;
                     *last = alarm;
                     break;
