@@ -125,11 +125,14 @@ int main (int argc, char *argv[])
          * (%128[^\n]), consisting of up to 128 characters
          * separated from the seconds by whitespace.
          */
-        if (sscanf (line, "Start_Alarm(%d) %d %128[^\n]", 
-            &alarm->id, &alarm->seconds, alarm->message) < 3) {
+        if ((sscanf (line, "Start_Alarm(%d) %d %128[^\n]", &alarm->id, &alarm->seconds, alarm->message) < 3)
+            && (sscanf (line, "Change_Alarm(%d) %d %128[^\n]", &alarm->id, &alarm->seconds, alarm->message) < 3))
+            {
             fprintf (stderr, "Bad command\n");
             free (alarm);
-        } else {
+        }
+        else if (!(sscanf (line, "Start_Alarm(%d) %d %128[^\n]", &alarm->id, &alarm->seconds, alarm->message) < 3))
+          {
             alarm->time = time (NULL) + alarm->seconds;
             printf ("Alarm(%d) Inserted by Main Thread Into %d Alarm list at %d: [\"%s\"]\n", alarm->id, pthread_self(),alarm->time,alarm->message);
             status = pthread_mutex_lock (&alarm_mutex);
@@ -137,7 +140,7 @@ int main (int argc, char *argv[])
                 err_abort (status, "Lock mutex");
             /*
              * Insert the new alarm into the list of alarms,
-             * sorted by expiration time.
+             * sorted by their id.
              */
             last = &alarm_list;
             next = *last;
@@ -149,6 +152,33 @@ int main (int argc, char *argv[])
                 }
                 last = &next->link;
                 next = next->link;
+            }
+          }
+        else {
+              printf("HELLO\n");
+              int id;
+              int seconds;
+              char message[128];
+              scanf(line,"Change_Alarm(%d) %d %128[^\n]",&id,&seconds,message);
+
+              printf("%d %d %s\n", id, seconds, message);
+              status = pthread_mutex_lock (&alarm_mutex);
+              if (status != 0)
+                  err_abort (status, "Lock mutex");
+
+              last = &alarm_list;
+              next = *alarm_list;
+              while (next != NULL) {
+                if (next->id == alarm->id){
+                    alarm->message = next;
+                    alarm->seconds = next;
+                    break;
+                }
+                last = &next->link;
+                next = next->link;
+              }
+              alarm->time = time (NULL) + alarm->seconds;
+              printf("Alarm(%d) Changed at <%d>: %s\n", alarm->id, alarm->time, alarm->message);
             }
             /*
              * If we reached the end of the list, insert the new
@@ -172,4 +202,3 @@ int main (int argc, char *argv[])
                 err_abort (status, "Unlock mutex");
         }
     }
-}
