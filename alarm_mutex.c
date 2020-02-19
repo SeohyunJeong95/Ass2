@@ -95,7 +95,7 @@ void *alarm_thread (void *arg)
          * structure.
          */
         if (alarm != NULL) {
-            printf ("Alarm(%d) Inserted by Main Thread Into %d Alarm list at %d: [\"%s\"]", alarm->id, pthread_self(),alarm->time,alarm->message);
+            // printf ("Alarm(%d) Inserted by Main Thread Into %d Alarm list at %d: [\"%s\"]", alarm->id, pthread_self(),alarm->time,alarm->message);
             free (alarm);
         }
     }
@@ -103,9 +103,9 @@ void *alarm_thread (void *arg)
 
 int main (int argc, char *argv[])
 {
-    int status;
-    char line[128];
-    alarm_t *alarm, **last, *next;
+    int status, id, seconds;
+    char line[128], message[128];
+    alarm_t *alarm, **last, *next, *list;
     pthread_t thread;
 
     status = pthread_create (
@@ -153,32 +153,34 @@ int main (int argc, char *argv[])
                 last = &next->link;
                 next = next->link;
             }
+            if(next == NULL)
+            {
+              *last = alarm;
+              alarm->link = NULL;
+            }
+            // status = pthread_mutex_unlock (&alarm_mutex);
+            // if (status != 0)
+            //     err_abort (status, "Unlock mutex");
           }
         else {
-              printf("HELLO\n");
-              int id;
-              int seconds;
-              char message[128];
-              scanf(line,"Change_Alarm(%d) %d %128[^\n]",&id,&seconds,message);
-
-              printf("%d %d %s\n", id, seconds, message);
               status = pthread_mutex_lock (&alarm_mutex);
               if (status != 0)
                   err_abort (status, "Lock mutex");
 
-              last = &alarm_list;
-              next = *alarm_list;
-              while (next != NULL) {
-                if (next->id == alarm->id){
-                    alarm->message = next;
-                    alarm->seconds = next;
+              list = alarm_list;
+              printf("%d\n", list->id);
+              while (list != NULL) {
+                printf("id:%d\n",list->id);
+                if (list->id == alarm->id){
+                    // list->message = message;
+                    list->seconds = alarm->seconds;
+                    list->time = time (NULL) + alarm->seconds;
+                    printf("Alarm(%d) Changed at <%d>: %s\n", alarm->id, alarm->time, alarm->message);
                     break;
                 }
-                last = &next->link;
-                next = next->link;
+                list = list->link;
               }
-              alarm->time = time (NULL) + alarm->seconds;
-              printf("Alarm(%d) Changed at <%d>: %s\n", alarm->id, alarm->time, alarm->message);
+
             }
             /*
              * If we reached the end of the list, insert the new
@@ -186,6 +188,7 @@ int main (int argc, char *argv[])
              * to the link field of the last item, or to the
              * list header).
              */
+
             if (next == NULL) {
                 *last = alarm;
                 alarm->link = NULL;
