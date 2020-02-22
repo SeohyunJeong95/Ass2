@@ -41,7 +41,6 @@ void *alarm_thread (void *arg)
     int sleep_time;
     time_t now;
     int status;
-
     /*
      * Loop forever, processing commands. The alarm thread will
      * be disintegrated when the process exits.
@@ -51,7 +50,6 @@ void *alarm_thread (void *arg)
         if (status != 0)
             err_abort (status, "Lock mutex");
         alarm = alarm_list;
-
         /*
          * If the alarm list is empty, wait for one second. This
          * allows the main thread to run, and read another
@@ -69,6 +67,7 @@ void *alarm_thread (void *arg)
                 sleep_time = 0;
             else
                 sleep_time = alarm->time - now;
+
 #ifdef DEBUG
             printf ("[waiting: %d(%d)\"%s\"]\n", alarm->time,
                 sleep_time, alarm->message);
@@ -125,6 +124,7 @@ int main (int argc, char *argv[])
          * (%128[^\n]), consisting of up to 128 characters
          * separated from the seconds by whitespace.
          */
+
         if ((sscanf (line, "Start_Alarm(%d) %d %128[^\n]", &alarm->id, &alarm->seconds, alarm->message) < 3)
             && (sscanf (line, "Change_Alarm(%d) %d %128[^\n]", &alarm->id, &alarm->seconds, alarm->message) < 3))
             {
@@ -132,9 +132,7 @@ int main (int argc, char *argv[])
             free (alarm);
         }
         else if (!(sscanf (line, "Start_Alarm(%d) %d %128[^\n]", &alarm->id, &alarm->seconds, alarm->message) < 3))
-          {
-            alarm->time = time (NULL) + alarm->seconds;
-            printf ("Alarm(%d) Inserted by Main Thread Into %d Alarm list at %d: [\"%s\"]\n", alarm->id, pthread_self(),alarm->time,alarm->message);
+          { //Start_Alarm call
             status = pthread_mutex_lock (&alarm_mutex);
             if (status != 0)
                 err_abort (status, "Lock mutex");
@@ -145,6 +143,7 @@ int main (int argc, char *argv[])
             last = &alarm_list;
             next = *last;
             while (next != NULL) {
+                //if alarm id is smaller, append alarm in front of next
                 if (next->id >= alarm->id) {
                     alarm->link = next;
                     *last = alarm;
@@ -158,41 +157,31 @@ int main (int argc, char *argv[])
               *last = alarm;
               alarm->link = NULL;
             }
-            // status = pthread_mutex_unlock (&alarm_mutex);
-            // if (status != 0)
-            //     err_abort (status, "Unlock mutex");
-          }
-        else {
+            alarm->time = time (NULL) + alarm->seconds;
+            printf ("Alarm(%d) Inserted by Main Thread Into %d Alarm list at %d: [\"%s\"]\n", alarm->id, pthread_self(),alarm->time,alarm->message);
+        }
+        else { //Change_Alarm Call
               status = pthread_mutex_lock (&alarm_mutex);
               if (status != 0)
                   err_abort (status, "Lock mutex");
 
-              list = alarm_list;
-              printf("%d\n", list->id);
-              while (list != NULL) {
-                printf("id:%d\n",list->id);
-                if (list->id == alarm->id){
-                    // list->message = message;
-                    list->seconds = alarm->seconds;
-                    list->time = time (NULL) + alarm->seconds;
+              // iteration to Change within list
+              last = &alarm_list;
+              next = *last;
+
+              while (next != NULL) {
+                if (next->id == alarm->id){
+                    next->seconds = alarm->seconds;
+                    strcpy(next->message, alarm->message);
+                    next->time = time (NULL) + alarm->seconds;
                     printf("Alarm(%d) Changed at <%d>: %s\n", alarm->id, alarm->time, alarm->message);
                     break;
                 }
-                list = list->link;
+                last = &next->link;
+                next = next->link;
               }
-
             }
-            /*
-             * If we reached the end of the list, insert the new
-             * alarm there. ("next" is NULL, and "last" points
-             * to the link field of the last item, or to the
-             * list header).
-             */
 
-            if (next == NULL) {
-                *last = alarm;
-                alarm->link = NULL;
-            }
 #ifdef DEBUG
             printf ("[list: ");
             for (next = alarm_list; next != NULL; next = next->link)
