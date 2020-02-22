@@ -29,9 +29,52 @@ typedef struct alarm_tag {
     char                message[128];
 } alarm_t;
 
+typedef struct display_struct{
+  int thread_num;
+  alarm_t *alarm_list;
+  alarm_t * latest_request;
+}display_t;
+
 pthread_mutex_t alarm_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t display_mutex = PTHREAD_MUTEX_INITIALIZER;
 alarm_t *alarm_list = NULL;
 
+//Insert to the list, sorted by smallest id;
+void Insert(alarm_t  **last, alarm_t *new){
+
+  alarm_t *old = *last;
+
+  while (*last != NULL) {
+      //if alarm id is smaller, append alarm in front of next
+      if (old->id >= new->id) {
+          new->link = old;
+          *last = new;
+          break;
+      }
+      last = &new->link;
+      new = new->link;
+  }
+  if(*last == NULL)
+  {
+    *last = new;
+  }
+}
+
+void Change(alarm_t **old,alarm_t *new){
+
+  alarm_t *alarm = *old;
+
+  while(alarm != NULL){
+    if (alarm->id == new->id){
+      strcpy(alarm->message, new->message);
+      alarm->seconds = new->seconds;
+      alarm->time = time (NULL) + new->seconds;
+      printf("Alarm(%d) Changed at <%d>: %s\n", alarm->id, alarm->time, alarm->message);
+      break;
+    }
+    alarm = alarm->link;
+  }
+}
 /*
  * The alarm thread's start routine.
  */
@@ -41,6 +84,7 @@ void *alarm_thread (void *arg)
     int sleep_time;
     time_t now;
     int status;
+    pthread_t thred;
     /*
      * Loop forever, processing commands. The alarm thread will
      * be disintegrated when the process exits.
@@ -49,16 +93,10 @@ void *alarm_thread (void *arg)
         status = pthread_mutex_lock (&alarm_mutex);
         if (status != 0)
             err_abort (status, "Lock mutex");
+
         alarm = alarm_list;
-        /*
-         * If the alarm list is empty, wait for one second. This
-         * allows the main thread to run, and read another
-         * command. If the list is not empty, remove the first
-         * item. Compute the number of seconds to wait -- if the
-         * result is less than 0 (the time has passed), then set
-         * the sleep_time to 0.
-         */
-        if (alarm == NULL)
+
+        if (alarm == NULL) //iterating through list
             sleep_time = 1;
         else {
             alarm_list = alarm->link;
@@ -68,12 +106,7 @@ void *alarm_thread (void *arg)
             else
                 sleep_time = alarm->time - now;
 
-#ifdef DEBUG
-            printf ("[waiting: %d(%d)\"%s\"]\n", alarm->time,
-                sleep_time, alarm->message);
-#endif
             }
-
         /*
          * Unlock the mutex before waiting, so that the main
          * thread can lock it to insert a new alarm request. If
@@ -94,7 +127,6 @@ void *alarm_thread (void *arg)
          * structure.
          */
         if (alarm != NULL) {
-            // printf ("Alarm(%d) Inserted by Main Thread Into %d Alarm list at %d: [\"%s\"]", alarm->id, pthread_self(),alarm->time,alarm->message);
             free (alarm);
         }
     }
@@ -104,13 +136,14 @@ int main (int argc, char *argv[])
 {
     int status, id, seconds;
     char line[128], message[128];
-    alarm_t *alarm, **last, *next, *list;
+    alarm_t *alarm, **last, *next;
     pthread_t thread;
 
     status = pthread_create (
         &thread, NULL, alarm_thread, NULL);
     if (status != 0)
         err_abort (status, "Create alarm thread");
+
     while (1) {
         printf ("alarm> ");
         if (fgets (line, sizeof (line), stdin) == NULL) exit (0);
@@ -125,61 +158,46 @@ int main (int argc, char *argv[])
          * separated from the seconds by whitespace.
          */
 
-        if ((sscanf (line, "Start_Alarm(%d) %d %128[^\n]", &alarm->id, &alarm->seconds, alarm->message) < 3)
-            && (sscanf (line, "Change_Alarm(%d) %d %128[^\n]", &alarm->id, &alarm->seconds, alarm->message) < 3))
+        if ((sscanf (line, "Start(%d) %d %128[^\n]", &alarm->id, &alarm->seconds, alarm->message) < 3)
+            && (sscanf (line, "Change(%d) %d %128[^\n]", &alarm->id, &alarm->seconds, alarm->message) < 3))
             {
             fprintf (stderr, "Bad command\n");
             free (alarm);
-        }
-        else if (!(sscanf (line, "Start_Alarm(%d) %d %128[^\n]", &alarm->id, &alarm->seconds, alarm->message) < 3))
+            continue;
+        } else if (!(sscanf (line, "Start(%d) %d %128[^\n]", &alarm->id, &alarm->seconds, alarm->message) < 3))
           { //Start_Alarm call
             status = pthread_mutex_lock (&alarm_mutex);
             if (status != 0)
                 err_abort (status, "Lock mutex");
+
+            alarm->time = time (NULL) + alarm->seconds;
+            printf ("Alarm(%d) Inserted by Main Thread Into %d Alarm list at %d: [\"%s\"]\n", alarm->id, pthread_self(),alarm->time,alarm->message);
+
             /*
              * Insert the new alarm into the list of alarms,
              * sorted by their id.
              */
-            last = &alarm_list;
-            next = *last;
-            while (next != NULL) {
-                //if alarm id is smaller, append alarm in front of next
-                if (next->id >= alarm->id) {
-                    alarm->link = next;
-                    *last = alarm;
-                    break;
-                }
-                last = &next->link;
-                next = next->link;
-            }
-            if(next == NULL)
-            {
-              *last = alarm;
-              alarm->link = NULL;
-            }
-            alarm->time = time (NULL) + alarm->seconds;
-            printf ("Alarm(%d) Inserted by Main Thread Into %d Alarm list at %d: [\"%s\"]\n", alarm->id, pthread_self(),alarm->time,alarm->message);
+             alarm_list = alarm;
+            Insert(&alarm, alarm_list);
+            printf("%d\n",alarm_list->id);
+
+            status = pthread_mutex_unlock(&alarm_mutex);
+            if (status != 0)
+                  err_abort(status, "Unlock_mutex");
+
+
         }
         else { //Change_Alarm Call
               status = pthread_mutex_lock (&alarm_mutex);
               if (status != 0)
                   err_abort (status, "Lock mutex");
 
-              // iteration to Change within list
-              last = &alarm_list;
-              next = *last;
+              Change(&alarm_list, alarm);
 
-              while (next != NULL) {
-                if (next->id == alarm->id){
-                    next->seconds = alarm->seconds;
-                    strcpy(next->message, alarm->message);
-                    next->time = time (NULL) + alarm->seconds;
-                    printf("Alarm(%d) Changed at <%d>: %s\n", alarm->id, alarm->time, alarm->message);
-                    break;
-                }
-                last = &next->link;
-                next = next->link;
-              }
+
+              status = pthread_mutex_unlock(&alarm_mutex);
+              if (status != 0)
+                    err_abort(status, "Unlock_mutex");
             }
 
 #ifdef DEBUG
