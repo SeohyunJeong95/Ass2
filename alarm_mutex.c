@@ -27,16 +27,11 @@ typedef struct alarm_tag {
     int                 seconds;
     time_t              time;   /* seconds from EPOCH */
     char                message[128];
+    int                 Changed;
 } alarm_t;
 
-typedef struct display_struct{
-  int thread_num;
-  alarm_t *alarm_list;
-  alarm_t * latest_request;
-}display_t;
 
 pthread_mutex_t alarm_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t display_mutex = PTHREAD_MUTEX_INITIALIZER;
 alarm_t *alarm_list = NULL;
 
 //Insert to the list, sorted by smallest id;
@@ -49,6 +44,7 @@ void Insert(alarm_t  **last, alarm_t *new){
       if (old->id >= new->id) {
           new->link = old;
           *last = new;
+          new->Changed = 0;
           break;
       }
       last = &new->link;
@@ -58,6 +54,10 @@ void Insert(alarm_t  **last, alarm_t *new){
   {
     *last = new;
   }
+
+  new->time = time (NULL) + new->seconds;
+  printf ("Alarm(%d) Inserted by Main Thread Into %d Alarm list at %d: [\"%s\"]\n",
+                        new->id, pthread_self(),new->time,new->message);
 }
 
 void Change(alarm_t **old,alarm_t *new){
@@ -69,11 +69,39 @@ void Change(alarm_t **old,alarm_t *new){
       strcpy(alarm->message, new->message);
       alarm->seconds = new->seconds;
       alarm->time = time (NULL) + new->seconds;
+      new->Changed = 1;
       printf("Alarm(%d) Changed at <%d>: %s\n", alarm->id, alarm->time, alarm->message);
       break;
     }
     alarm = alarm->link;
   }
+}
+
+void *display_thread (void *arg)
+{
+  alarm_t *alarm = (alarm_t*)arg;
+  int status, timer;
+  time_t now;
+
+  timer = alarm->seconds;
+  printf("%d\n",timer );
+  // while((alarm->seconds) > 0)
+  // {
+  //   for(;timer>0;){
+  //     timer -= 5;
+  //     // printf("Alarm (%d) Printed by Alarm Display Thread <%d>at <%d>:<%s>\n",
+  //     //         alarm->id,pthread_self(),alarm->time,alarm->message);
+  //       // sleep(5);
+  //     // if(alarm->Changed){
+  //     //   timer = alarm->seconds;
+  //     // }
+  //   }
+  //   printf("Alarm (%d) Printed by Alarm Display Thread <%d>at <%d>:<%s>\n",
+  //           alarm->id,pthread_self(),alarm->time,alarm->message);
+  //    sleep (timer);
+  //   printf("finished\n");
+  // }
+  return NULL;
 }
 /*
  * The alarm thread's start routine.
@@ -84,7 +112,7 @@ void *alarm_thread (void *arg)
     int sleep_time;
     time_t now;
     int status;
-    pthread_t thred;
+    pthread_t thread;
     /*
      * Loop forever, processing commands. The alarm thread will
      * be disintegrated when the process exits.
@@ -96,39 +124,41 @@ void *alarm_thread (void *arg)
 
         alarm = alarm_list;
 
-        if (alarm == NULL) //iterating through list
-            sleep_time = 1;
+        if (alarm == NULL){
+
+        } //iterating through list
+            //sleep_time = 1;
         else {
             alarm_list = alarm->link;
             now = time (NULL);
+            status = pthread_create (&thread, NULL, display_thread, alarm);
+            if(status != 0)
+                err_abort(status, "Create display thread");
+
             if (alarm->time <= now)
                 sleep_time = 0;
             else
                 sleep_time = alarm->time - now;
-
             }
-        /*
-         * Unlock the mutex before waiting, so that the main
-         * thread can lock it to insert a new alarm request. If
-         * the sleep_time is 0, then call sched_yield, giving
-         * the main thread a chance to run if it has been
-         * readied by user input, without delaying the message
-         * if there's no input.
-         */
+
         status = pthread_mutex_unlock (&alarm_mutex);
         if (status != 0)
             err_abort (status, "Unlock mutex");
-        if (sleep_time > 0)
-            sleep (sleep_time);
-        else
-            sched_yield ();
+        // if (sleep_time > 0){
+        //
+        // }
+        //     //sleep (sleep_time);
+        // else{
+        //     //sched_yield ();
+        // }
+
         /*
          * If a timer expired, print the message and free the
          * structure.
          */
-        if (alarm != NULL) {
-            free (alarm);
-        }
+        // if (alarm != NULL) {
+        //     free (alarm);
+        // }
     }
 }
 
@@ -170,15 +200,13 @@ int main (int argc, char *argv[])
             if (status != 0)
                 err_abort (status, "Lock mutex");
 
-            alarm->time = time (NULL) + alarm->seconds;
-            printf ("Alarm(%d) Inserted by Main Thread Into %d Alarm list at %d: [\"%s\"]\n", alarm->id, pthread_self(),alarm->time,alarm->message);
-
             /*
              * Insert the new alarm into the list of alarms,
              * sorted by their id.
              */
              alarm_list = alarm;
             Insert(&alarm, alarm_list);
+            //debug
             printf("%d\n",alarm_list->id);
 
             status = pthread_mutex_unlock(&alarm_mutex);
