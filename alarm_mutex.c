@@ -134,9 +134,7 @@ void *display_thread(void *arg)
 {
     alarm_t *alarm;
     int status;
-
-    // timer = alarm->seconds;
-    // printf("%d\n", timer);
+    time_t now;
     while (1)
     {
         status = pthread_mutex_lock(&alarm_mutex);
@@ -159,32 +157,117 @@ void *display_thread(void *arg)
                    alarm->message);
             sleep(5);
         }
+        printf("Alarm Thread Removed Alarm(%d) at %d: %s\n",
+            alarm->id,time(NULL),alarm->message);
         status = pthread_mutex_unlock(&alarm_mutex);
         if (status != 0)
         {
             err_abort(status, "unlock mutex");
         }
-        // free(alarm);
+        free(alarm);
+    }
+}
+void *display_thread_two(void *arg)
+{
+    alarm_t *alarm;
+    int status;
+    time_t now;
+    while (1)
+    {
+        status = pthread_mutex_lock(&alarm_mutex);
+        if (status != 0)
+        {
+            err_abort(status, "Lock mutex");
+        }
+        status = pthread_cond_wait(&d2_cond, &alarm_mutex);
+        if (status != 0)
+        {
+            err_abort(status, "wait on cond");
+        }
+        alarm = current_alarm;
+        while (alarm->time > time(NULL))
+        {
+            printf("Alarm(%d) Printed by Alarm Display Thread %d at %d : %s \n",
+                   alarm->id,
+                   pthread_self(),
+                   time(NULL),
+                   alarm->message);
+            sleep(5);
+        }
+        printf("Alarm Thread Removed Alarm(%d) at %d: %s\n",
+            alarm->id,time(NULL),alarm->message);
+        status = pthread_mutex_unlock(&alarm_mutex);
+        if (status != 0)
+        {
+            err_abort(status, "unlock mutex");
+        }
+        free(alarm);
+    }
+}
+void *display_thread_three(void *arg)
+{
+    alarm_t *alarm;
+    int status;
+    time_t now;
+    while (1)
+    {
+        status = pthread_mutex_lock(&alarm_mutex);
+        if (status != 0)
+        {
+            err_abort(status, "Lock mutex");
+        }
+        status = pthread_cond_wait(&d3_cond, &alarm_mutex);
+        if (status != 0)
+        {
+            err_abort(status, "wait on cond");
+        }
+        alarm = current_alarm;
+        while (alarm->time > time(NULL))
+        {
+            printf("Alarm(%d) Printed by Alarm Display Thread %d at %d : %s \n",
+                   alarm->id,
+                   pthread_self(),
+                   time(NULL),
+                   alarm->message);
+            sleep(5);
+        }
+        printf("Alarm Thread Removed Alarm(%d) at %d: %s\n",
+            alarm->id,time(NULL),alarm->message);
+        status = pthread_mutex_unlock(&alarm_mutex);
+        if (status != 0)
+        {
+            err_abort(status, "unlock mutex");
+        }
+        free(alarm);
     }
 }
 
 int main(int argc, char *argv[])
 {
-    int status, id, seconds;
-    char line[128], message[128];
+    int status;
+    char line[128];
     alarm_t *alarm, **last, *next;
     pthread_t thread;
     pthread_t d1_thread;
+    pthread_t d2_thread;
+    pthread_t d3_thread;
 
     status = pthread_create(
         &thread, NULL, alarm_thread, NULL);
     if (status != 0)
         err_abort(status, "Create alarm thread");
-    status = pthread_create(&d1_thread, NULL, display_thread, NULL);
+    status = pthread_create(
+        &d1_thread, NULL, display_thread, NULL);
     if (status != 0)
-    {
-        err_abort(status, "display thread");
-    }
+        err_abort(status, "display thread one");
+    status = pthread_create(
+        &d2_thread, NULL, display_thread_two, NULL);
+    if (status != 0)
+        err_abort(status, "display thread two");
+    status = pthread_create(
+        &d3_thread, NULL, display_thread_three, NULL);
+    if (status != 0)
+        err_abort(status, "display thread three");
     while (1)
     {
         printf("alarm> ");
@@ -218,11 +301,8 @@ int main(int argc, char *argv[])
                 * Insert the new alarm into the list of alarms,
                 * sorted by their id.
                 */
-            alarm_list = alarm;
-            Insert(&alarm, alarm_list);
-            //debug
-            printf("%d\n", alarm_list->id);
-
+            Insert(&alarm_list, alarm);
+            
             status = pthread_mutex_unlock(&alarm_mutex);
             if (status != 0)
                 err_abort(status, "Unlock_mutex");
