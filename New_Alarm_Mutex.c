@@ -136,10 +136,10 @@ void *alarm_thread(void *arg)
          * If the alarm list is empty, wait for one second. This
          * allows the main thread to run, and read another
          * command. If the list is not empty, remove the first
-         * item. 
-         * Get the expiry time, and assign display thread 1
-	     * to process the alarm if the expiry time is odd, or display
-         * thread 2 if the expiry time is even.
+         * item. Get the expiry time, and assign display thread
+         * 1 to process the alarm if the (expiry time % 3 == 1)
+         * if (expiry time % 3 == 2) assign it to display thread 2
+         * if (expiry time % 3 == 0) assign it to display thread 3
          */
         if (alarm == NULL)
         {
